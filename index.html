@@ -29,6 +29,10 @@ body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
 h1{font-size:20px;font-weight:900;margin:0;letter-spacing:.02em}
 header p{margin:0;color:var(--muted)}
+.theme{margin-left:auto;display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.theme button{border:0;border-radius:0;padding:5px 12px;font-size:13px;color:var(--muted)}
+.theme button+button{border-left:1px solid var(--line)}
+.theme button.on{background:var(--accent-soft);color:var(--fg);font-weight:700}
 .top{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:14px;align-items:start}
 @media (max-width:900px){.top{grid-template-columns:1fr}}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
@@ -115,6 +119,9 @@ body{margin:0}
   <header>
     <h1>讀稿提詞器</h1>
     <p>貼上整段文案自動分段，在時間軸上拖曳排序、拉長縮短每段的停留時間。</p>
+    <div class="theme" role="group" aria-label="介面主題">
+      <button data-t="">跟隨系統</button><button data-t="light">☀ 淺色</button><button data-t="dark">☾ 深色</button>
+    </div>
   </header>
 
   <div class="top">
@@ -207,7 +214,7 @@ const $=id=>document.getElementById(id);
 const r1=n=>Math.round(n*10)/10;
 const CJK=/[぀-ヿ㐀-鿿豈-﫿가-힯]/g;
 let uid=1;
-const S={pageColor:'#4fb3ff',pageDur:2,segs:[],speed:4.5,fs:5,mirror:false,left:false,cd:true,pps:48,ripple:true,rate:1,src:''};
+const S={theme:'',pageColor:'#4fb3ff',pageDur:2,segs:[],speed:4.5,fs:5,mirror:false,left:false,cd:true,pps:48,ripple:true,rate:1,src:''};
 let t=0, playing=false, last=0, raf=0, sel=null, countdown=0;
 
 const sample=`大家好，我是今天的報告人。今天想跟大家分享我們這一季的設計成果。
@@ -507,6 +514,8 @@ $('reEstB').onclick=()=>{ S.segs.forEach(s=>s.dur=est(s.text)); commit(); };
 
 /* ---------- 顯示設定 ---------- */
 const applyView=()=>{
+  if(S.theme) document.documentElement.setAttribute('data-theme',S.theme); else document.documentElement.removeAttribute('data-theme');
+  document.querySelectorAll('.theme button').forEach(b=>b.classList.toggle('on',b.dataset.t===S.theme));
   $('stage').style.setProperty('--fs',S.fs);
   document.documentElement.style.setProperty('--page',S.pageColor);
   $('pageColor').value=S.pageColor; $('pageDurIn').value=S.pageDur;
@@ -519,6 +528,7 @@ $('fsz').oninput=()=>{ S.fs=+$('fsz').value; applyView(); save(); };
 $('mirror').onclick=()=>{ S.mirror=!S.mirror; applyView(); save(); };
 $('alignB').onclick=()=>{ S.left=!S.left; applyView(); save(); };
 $('cdB').onclick=()=>{ S.cd=!S.cd; applyView(); save(); };
+document.querySelectorAll('.theme button').forEach(b=>b.onclick=()=>{ S.theme=b.dataset.t; applyView(); save(); });
 $('pageColor').oninput=()=>{ S.pageColor=$('pageColor').value; applyView(); save(); };
 // 改換頁秒數：所有換頁一起套用；個別換頁仍可在時間軸單獨拉長縮短
 $('pageDurIn').oninput=()=>{ const v=parseFloat($('pageDurIn').value); if(v>=.5){ S.pageDur=r1(v); S.segs.forEach(s=>{ if(isPage(s)) s.dur=S.pageDur; }); commit(); } };
