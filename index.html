@@ -74,6 +74,13 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 .segbar i{display:block;height:100%;width:0;background:var(--read)}
 .meta{position:absolute;top:1.6cqw;left:2cqw;right:2cqw;display:flex;justify-content:space-between;font-family:var(--mono);font-size:max(11px,1.4cqw);color:var(--stage-dim);font-variant-numeric:tabular-nums}
 .count{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:22cqw;font-weight:600;color:var(--read);background:rgba(12,13,16,.7)}
+.fsPlay{display:none;position:absolute;z-index:8;right:calc(2.4cqw + env(safe-area-inset-right,0px));bottom:calc(2.4cqw + env(safe-area-inset-bottom,0px));
+  width:clamp(56px,6cqw,96px);height:clamp(56px,6cqw,96px);border-radius:50%;padding:0;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);color:var(--stage-fg);font-size:clamp(22px,2.4cqw,38px);
+  display:none;place-items:center;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:.75;transition:opacity .2s,background .2s}
+.fsPlay:hover{opacity:1;background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.5)}
+.stage:fullscreen .fsPlay{display:grid}
+.stage.mirror .fsPlay{transform:none}
 .tc{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
 .tc small{color:var(--muted);font-weight:400}
 #tc{font-size:22px;font-weight:700;line-height:1.2;padding:4px 12px;background:var(--soft);border:1px solid var(--line);border-radius:8px;color:var(--fg);letter-spacing:.01em}
@@ -135,6 +142,7 @@ body{margin:0}
         </div>
         <div class="segbar"><i id="segbar"></i></div>
         <div class="count" id="count" hidden></div>
+        <button class="fsPlay" id="fsPlay" aria-label="播放或暫停">▶</button>
       </div>
       <div class="row">
         <button class="primary" id="play">▶ 播放</button>
@@ -433,6 +441,7 @@ function follow(){
 function setPlay(p){
   if(p&&!S.segs.length) return;
   playing=p; $('play').textContent=p?'❚❚ 暫停':'▶ 播放';
+  $('fsPlay').textContent=p?'❚❚':'▶';
   cancelAnimationFrame(raf);
   if(p){
     if(t>=total()-0.05) t=0;
@@ -540,6 +549,7 @@ $('fs').onclick=()=>{ const s=$('stage');
   p&&p.catch&&p.catch(()=>{}); };
 
 $('play').onclick=()=>setPlay(!playing);
+$('fsPlay').onclick=e=>{ e.stopPropagation(); setPlay(!playing); };
 $('restart').onclick=()=>{ seek(0); $('tl').scrollLeft=0; setPlay(true); };
 $('prevB').onclick=()=>jump(-1); $('nextB').onclick=()=>jump(1);
 document.addEventListener('keydown',e=>{
