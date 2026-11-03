@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>讀稿提詞器</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: prompter stage + segment editor on top, full-width draggable timeline below (edit-suite feel). */
+:root{
+  --bg:#eef0f3; --panel:#ffffff; --fg:#15171c; --muted:#5f6776; --line:#d9dde4; --soft:#f6f7f9;
+  --accent:#e2552b; --accent-fg:#ffffff; --accent-soft:#fbe3da;
+  --page:#4fb3ff;
+  --stage:#0c0d10; --stage-fg:#f4f5f7; --stage-dim:#6b7180; --read:#ffc24a;
+  --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111317; --panel:#1a1d22; --fg:#eceef2; --muted:#98a0ae; --line:#2b2f37; --soft:#15181c;
+  --accent:#ff6a3d; --accent-fg:#14161a; --accent-soft:#3a241c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111317; --panel:#1a1d22; --fg:#eceef2; --muted:#98a0ae; --line:#2b2f37; --soft:#15181c;
+  --accent:#ff6a3d; --accent-fg:#14161a; --accent-soft:#3a241c; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 40px}
+.wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
+h1{font-size:20px;font-weight:900;margin:0;letter-spacing:.02em}
+header p{margin:0;color:var(--muted)}
+.top{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:900px){.top{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.label{font-size:11.5px;font-weight:700;letter-spacing:.1em;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.spacer{flex:1}
+button{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:7px;padding:6px 11px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--muted)}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:700;min-width:88px}
+button.on{background:var(--accent-soft);border-color:var(--accent)}
+button:focus-visible,textarea:focus,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+textarea{width:100%;font:inherit;line-height:1.7;background:var(--soft);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;resize:vertical}
+select,input[type=number]{font:inherit;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:5px 8px}
+input[type=number]{width:78px;font-family:var(--mono)}
+input[type=range]{accent-color:var(--accent)}
+.edit{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start}
+.edit-tools{display:flex;flex-direction:column;gap:8px;max-width:420px}
+@media (max-width:760px){.edit{grid-template-columns:1fr}}
+.field{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--soft);color:var(--fg)}
+
+/* Stage */
+.stage{position:relative;aspect-ratio:16/9;max-width:100%;background:var(--stage);border-radius:10px;overflow:hidden;container-type:inline-size;color:var(--stage-fg)}
+.stage:fullscreen{border-radius:0;aspect-ratio:auto}
+.flip{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;gap:2cqw;padding:4.5cqw 6cqw 3cqw;text-align:center;overflow:hidden}
+.stage.mirror .flip{transform:scaleX(-1)}
+.prev,.next{color:var(--stage-dim);font-size:calc(var(--fs) * 1cqw);font-weight:700;line-height:1.45;display:flex;flex-direction:column;gap:2cqw}
+.prev div,.next div{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.prev div:first-child:not(:only-child),.next div:last-child:not(:only-child){opacity:.55}
+.curr{font-size:calc(var(--fs) * 1cqw);font-weight:700;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+.curr span.r{color:var(--read)}
+.curr.pg,.prev .pg,.next .pg{color:var(--page)}
+.curr span.h{background:linear-gradient(90deg,var(--read) calc(var(--p) * 1.3 - 30%),var(--stage-fg) calc(var(--p) * 1.3));-webkit-background-clip:text;background-clip:text;color:transparent}
+.curr.pause{color:var(--stage-dim);font-weight:500;font-size:calc(var(--fs) * .6cqw)}
+.stage.align-left .flip{text-align:left}
+.segbar{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.08)}
+.segbar i{display:block;height:100%;width:0;background:var(--read)}
+.meta{position:absolute;top:1.6cqw;left:2cqw;right:2cqw;display:flex;justify-content:space-between;font-family:var(--mono);font-size:max(11px,1.4cqw);color:var(--stage-dim);font-variant-numeric:tabular-nums}
+.count{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:22cqw;font-weight:600;color:var(--read);background:rgba(12,13,16,.7)}
+.tc{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
+.tc small{color:var(--muted);font-weight:400}
+#tc{font-size:22px;font-weight:700;line-height:1.2;padding:4px 12px;background:var(--soft);border:1px solid var(--line);border-radius:8px;color:var(--fg);letter-spacing:.01em}
+#tc small{font-size:16px;font-weight:600;color:var(--muted)}
+
+/* Timeline */
+.tl-head{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.tl{position:relative;overflow-x:auto;overflow-y:hidden;border:1px solid var(--line);border-radius:8px;background:var(--soft);user-select:none;-webkit-user-select:none}
+.tl-inner{position:relative;height:128px}
+.ruler{position:absolute;left:0;right:0;top:0;height:26px;border-bottom:1px solid var(--line);cursor:ew-resize;touch-action:none}
+.tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line)}
+.tick.major{border-left-color:var(--muted)}
+.tick span{position:absolute;left:4px;top:4px;font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:nowrap}
+.track{position:absolute;left:0;top:34px;height:82px}
+.blk{position:absolute;top:0;height:82px;padding:6px 14px 6px 8px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px;
+  cursor:grab;touch-action:none;overflow:hidden;display:flex;flex-direction:column;gap:2px;transition:left .14s ease}
+.blk .n{font-family:var(--mono);font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.blk .x{font-size:12.5px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.blk.pause{border-left-color:var(--muted);background:repeating-linear-gradient(135deg,var(--soft) 0 6px,var(--panel) 6px 12px)}
+.blk.pause .x{color:var(--muted)}
+.blk.page{border-left-color:var(--page);border-style:dashed;border-left-style:solid}
+.blk.page .x{color:var(--muted);font-weight:700}
+.blk.playing{box-shadow:inset 0 0 0 2px var(--read)}
+.blk.sel{background:var(--accent-soft);border-color:var(--accent)}
+.blk.dragging{transition:none;cursor:grabbing;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.22);opacity:.92}
+.handle{position:absolute;right:0;top:0;bottom:0;width:10px;cursor:ew-resize;display:grid;place-items:center}
+.handle::after{content:"";width:3px;height:26px;border-radius:2px;background:var(--line)}
+.blk:hover .handle::after,.blk.sel .handle::after{background:var(--accent)}
+.playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--read);pointer-events:none;z-index:6;margin-left:-1px}
+.playhead::before{content:"";position:absolute;top:0;left:-5px;border:6px solid transparent;border-top:8px solid var(--read)}
+.bubble{position:fixed;pointer-events:none;z-index:50;font-family:var(--mono);font-size:12px;background:var(--fg);color:var(--bg);padding:2px 7px;border-radius:5px}
+
+@media (prefers-reduced-motion:reduce){.blk{transition:none}}
+
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>讀稿提詞器</h1>
+    <p>貼上整段文案自動分段，在時間軸上拖曳排序、拉長縮短每段的停留時間。</p>
+  </header>
+
+  <div class="top">
+    <section class="panel">
+      <div class="stage" id="stage" style="--fs:5">
+        <div class="meta"><span id="metaL">段 1/1</span><span id="metaR">00:00.0</span></div>
+        <div class="flip">
+          <div class="prev" id="prev"></div>
+          <div class="curr" id="curr"></div>
+          <div class="next" id="next"></div>
+        </div>
+        <div class="segbar"><i id="segbar"></i></div>
+        <div class="count" id="count" hidden></div>
+      </div>
+      <div class="row">
+        <button class="primary" id="play">▶ 播放</button>
+        <button id="prevB" title="上一段（←）">⏮</button>
+        <button id="nextB" title="下一段（→）">⏭</button>
+        <button id="restart">⟲ 從頭</button>
+        <span class="tc" id="tc">00:00.0 <small>/ 00:00.0</small></span>
+        <span class="spacer"></span>
+        <button id="fs">全螢幕</button>
+      </div>
+      <div class="row">
+        <label class="field">字級 <input type="range" id="fsz" min="3" max="9" step=".25" value="5"></label>
+        <label class="field">播放速度
+          <select id="rate"><option>0.8</option><option>0.9</option><option selected>1</option><option>1.1</option><option>1.25</option><option>1.5</option></select>×</label>
+        <button id="mirror">鏡像</button>
+        <button id="alignB">靠左</button>
+        <button id="cdB" class="on">3 秒倒數</button>
+        <label class="field">換頁顏色 <input type="color" id="pageColor" value="#4fb3ff"></label>
+        <label class="field">換頁秒數 <input type="number" id="pageDurIn" min="0.5" step="0.5" value="2"></label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <span class="label">貼上整段文案</span>
+      <textarea id="src" rows="12" placeholder="把整份講稿貼在這裡，貼上後會自動依句號分段"></textarea>
+      <div class="row">
+        <label class="field">分段方式
+          <select id="mode"><option value="period" selected>依句號「。」分割</option><option value="sentence">依句號、問號、驚嘆號分割</option><option value="line">依換行分段</option></select></label>
+        <label class="field">語速 <input type="number" id="speed" min="1" max="12" step="0.5" value="4.5"> 字／秒</label>
+      </div>
+      <button id="importB" hidden>重新分段</button>
+      <button id="reEstB" hidden>全部依語速重估</button>
+      <p class="hint"><kbd>空白</kbd> 播放／暫停　<kbd>←</kbd><kbd>→</kbd> 上下段　時間軸：拖段落排序、拖右緣調長短、點上方刻度跳轉</p>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="tl-head">
+      <span class="label">時間軸</span>
+      <span class="hint" id="tlInfo"></span>
+      <span class="spacer"></span>
+      <label class="field"><input type="checkbox" id="ripple" checked> 拉長時後段跟著移</label>
+      <label class="field">縮放 <input type="range" id="zoom" min="12" max="160" value="48"></label>
+    </div>
+    <div class="tl" id="tl">
+      <div class="tl-inner" id="tlInner">
+        <div class="ruler" id="ruler"></div>
+        <div class="track" id="track"></div>
+        <div class="playhead" id="ph"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row"><span class="label">已選段落</span><span class="tc" id="selInfo"></span></div>
+    <div class="edit">
+      <textarea id="segText" rows="3" placeholder="在時間軸點一下段落即可編輯"></textarea>
+      <div class="edit-tools">
+        <div class="row">
+          <label class="field">停留 <input type="number" id="segDur" min="0.5" step="0.1"> 秒</label>
+          <button id="estB" title="依字數與語速重新估算">依字數估</button>
+        </div>
+        <div class="row">
+          <button id="splitB" title="在文字框游標位置切成兩段">✂ 從游標處分割</button>
+          <button id="mergeB">與下一段合併</button>
+          <button id="pauseB">後面插入換頁</button>
+          <button id="delB">刪除</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="bubble" id="bubble" hidden></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const r1=n=>Math.round(n*10)/10;
+const CJK=/[぀-ヿ㐀-鿿豈-﫿가-힯]/g;
+let uid=1;
+const S={pageColor:'#4fb3ff',pageDur:2,segs:[],speed:4.5,fs:5,mirror:false,left:false,cd:true,pps:48,ripple:true,rate:1,src:''};
+let t=0, playing=false, last=0, raf=0, sel=null, countdown=0;
+
+const sample=`大家好，我是今天的報告人。今天想跟大家分享我們這一季的設計成果。
+
+首先，我們重新整理了整個產品的視覺語言。從顏色、字體到圖示，都經過一致的規劃。
+
+接下來，請大家看這張畫面。這是使用者第一次打開時會看到的內容！
+
+最後，我們會說明下一步的計畫，以及需要大家協助的地方。謝謝大家。`;
+
+/* ---------- 估時與分段 ---------- */
+const PAGE='[換頁]';
+const isPage=x=>(typeof x==='string'?x:x.text).trim()===PAGE;
+const isText=x=>x.text.trim()&&!isPage(x);
+function est(text){
+  if(isPage(text)) return S.pageDur||2;
+  if(!text.trim()) return 1.5;
+  const cjk=(text.match(CJK)||[]).length;
+  const words=(text.replace(CJK,' ').match(/[A-Za-z0-9]+/g)||[]).length;
+  return Math.max(1,r1((cjk+words*1.6)/S.speed+0.4));
+}
+// 空白行（段與段之間）→ [換頁]
+function normSrc(text){
+  return text.replace(/\r/g,'').trim()
+    .replace(/\n(?:[ \t]*\n)+/g,'\n'+PAGE+'\n')
+    .replace(/(?:\[換頁\][ \t]*\n)+\[換頁\]/g,PAGE);
+}
+function split(text,mode){
+  const out=[];
+  normSrc(text).split('\n').map(s=>s.trim()).filter(Boolean).forEach(l=>{
+    if(l===PAGE){ if(out.length && out[out.length-1]!==PAGE) out.push(PAGE); return; }
+    splitLine(l,mode).forEach(p=>{
+      if(out.length && out[out.length-1]!==PAGE && !p.replace(/[\p{P}\s]/gu,'')) out[out.length-1]+=p; else out.push(p);
+    });
+  });
+  while(out[out.length-1]===PAGE) out.pop();
+  return out;
+}
+function splitLine(l,mode){
+  if(mode==='line') return [l];
+  // 全形。、．、半形｡，以及後面接空白的英文句點
+  const re=mode==='period'
+    ? /(?:[^。．｡.]|\.(?=\S))+(?:(?:[。．｡]|\.(?=\s|$))+[」』”"）)]*)?/g
+    : /(?:[^。．｡.！？!?]|\.(?=\S))+(?:(?:[。．｡！？!?]|\.(?=\s|$))+[」』”"）)]*)?/g;
+  return (l.match(re)||[l]).map(s=>s.trim()).filter(Boolean);
+}
+const mk=(text,dur)=>({id:uid++,text,dur:dur??est(text)});
+
+/* ---------- 儲存 ---------- */
+function save(){ try{localStorage.setItem('prompter-v1',JSON.stringify(S))}catch(e){} }
+// 段落編輯後，把文字寫回原文框（每段一行），讓兩邊保持一致
+function syncSrc(){
+  // 換頁寫回成空白行，原文保持你習慣的段落格式
+  S.src=S.segs.filter(s=>s.text.trim()).map(s=>isPage(s)?'':s.text.trim()).join('\n').replace(/\n{3,}/g,'\n\n').trim();
+  const ta=document.getElementById('src'); if(ta && document.activeElement!==ta) ta.value=S.src;
+  save();
+}
+function load(){
+  try{ const d=JSON.parse(localStorage.getItem('prompter-v1')||'null');
+    if(d&&d.segs&&d.segs.length){ Object.assign(S,d); S.segs.forEach(s=>s.id=uid++); return true; } }catch(e){}
+  return false;
+}
+
+/* ---------- 計算 ---------- */
+const starts=()=>{ let a=0; return S.segs.map(s=>{const v=a;a+=s.dur;return v}); };
+const total=()=>S.segs.reduce((a,s)=>a+s.dur,0);
+const idxOf=id=>S.segs.findIndex(s=>s.id===id);
+function at(time){ const st=starts(); for(let i=S.segs.length-1;i>=0;i--) if(time>=st[i]) return i; return 0; }
+function fmt(x){ x=Math.max(0,x); const m=Math.floor(x/60), s=Math.floor(x%60), d=Math.floor((x%1)*10); return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${d}`; }
+
+/* ---------- 時間軸 ---------- */
+const track=$('track');
+const nodes=new Map();
+function build(){
+  track.innerHTML=''; nodes.clear();
+  S.segs.forEach((s,i)=>{
+    const b=document.createElement('div'); b.className='blk'; b.dataset.id=s.id;
+    b.innerHTML='<span class="n"></span><span class="x"></span><span class="handle"></span>';
+    attach(b,s.id); track.appendChild(b); nodes.set(s.id,b);
+  });
+  layout(); ruler();
+}
+function layout(skipId){
+  const st=starts(), pps=S.pps;
+  S.segs.forEach((s,i)=>{
+    const b=nodes.get(s.id); if(!b) return;
+    if(s.id!==skipId) b.style.left=st[i]*pps+'px';
+    b.style.width=Math.max(8,s.dur*pps-3)+'px';
+    b.classList.toggle('pause',!s.text.trim());
+    b.classList.toggle('page',isPage(s));
+    b.classList.toggle('sel',s.id===sel);
+    b.querySelector('.n').textContent=`#${i+1} · ${s.dur.toFixed(1)}s`;
+    b.querySelector('.x').textContent=isPage(s)?'⤶ 換頁':(s.text.trim()||'（停頓）');
+  });
+  const w=Math.max($('tl').clientWidth-2,(total()+8)*pps);
+  $('tlInner').style.width=w+'px'; track.style.width=w+'px';
+  $('tlInfo').textContent=`${S.segs.length} 段 · 全長 ${fmt(total())}`;
+  stage(); selPanel();
+}
+function ruler(){
+  const R=$('ruler'); R.innerHTML='';
+  const pps=S.pps, len=Math.ceil(($('tlInner').offsetWidth)/pps);
+  const step=pps>=60?1:pps>=25?2:5, major=pps>=60?5:pps>=25?10:30;
+  for(let s=0;s<=len;s+=step){
+    const k=document.createElement('div'); k.className='tick'+(s%major===0?' major':''); k.style.left=s*pps+'px';
+    if(s%major===0) k.innerHTML=`<span>${fmt(s).slice(0,5)}</span>`;
+    R.appendChild(k);
+  }
+}
+const bubble=$('bubble');
+function showBubble(e,txt){ bubble.hidden=false; bubble.textContent=txt; bubble.style.left=(e.clientX+12)+'px'; bubble.style.top=(e.clientY-30)+'px'; }
+
+function attach(b,id){
+  let d=null;
+  b.addEventListener('pointerdown',e=>{
+    if(e.button) return;
+    const i=idxOf(id); const s=S.segs[i];
+    d={mode:e.target.classList.contains('handle')?'resize':'move',x0:e.clientX,orig:s.dur,st0:starts()[i],moved:false,nextOrig:S.segs[i+1]?.dur};
+    b.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  b.addEventListener('pointermove',e=>{
+    if(!d) return;
+    const dx=e.clientX-d.x0;
+    if(!d.moved && Math.abs(dx)<4) return;
+    d.moved=true; const i=idxOf(id), s=S.segs[i];
+    if(d.mode==='resize'){
+      let nd=Math.max(.5,r1(d.orig+dx/S.pps));
+      if(!S.ripple && S.segs[i+1]){ // 只移動分界線：下一段吸收差值
+        const sum=d.orig+d.nextOrig; nd=Math.min(nd,r1(sum-.5)); S.segs[i+1].dur=r1(sum-nd);
+      }
+      s.dur=nd; layout(); showBubble(e,`${nd.toFixed(1)} 秒`);
+    } else {
+      b.classList.add('dragging');
+      const lt=Math.max(0,d.st0+dx/S.pps), center=lt+s.dur/2;
+      const others=S.segs.filter(x=>x.id!==id); let acc=0, ins=0;
+      for(const o of others){ if(acc+o.dur/2<center) ins++; acc+=o.dur; }
+      others.splice(ins,0,s);
+      if(others.some((x,k)=>x!==S.segs[k])){ S.segs=others; }
+      layout(id); b.style.left=lt*S.pps+'px';
+      showBubble(e,`移到第 ${ins+1} 段`);
+    }
+  });
+  const end=()=>{
+    if(!d) return;
+    b.classList.remove('dragging'); bubble.hidden=true;
+    if(!d.moved){ select(id); if(!playing) seek(starts()[idxOf(id)]); }
+    else { if(d.mode==='move'){ syncSrc(); select(id); } else save(); }
+    d=null; layout(); ruler();
+  };
+  b.addEventListener('pointerup',end); b.addEventListener('pointercancel',end);
+}
+
+// 刻度：點擊或拖曳跳轉
+(()=>{
+  const R=$('ruler'); let on=false;
+  const go=e=>{ const r=$('tlInner').getBoundingClientRect(); seek(Math.min(total(),Math.max(0,(e.clientX-r.left)/S.pps))); };
+  R.addEventListener('pointerdown',e=>{on=true;R.setPointerCapture(e.pointerId);go(e)});
+  R.addEventListener('pointermove',e=>{if(on)go(e)});
+  R.addEventListener('pointerup',()=>on=false);
+})();
+
+/* ---------- 提詞畫面 ---------- */
+let lastKey='';
+function stage(){
+  const n=S.segs.length; if(!n) return;
+  const i=at(t), st=starts(), s=S.segs[i];
+  const p=Math.min(1,Math.max(0,(t-st[i])/s.dur));
+  const pg=isPage(s), txt=pg?'':s.text.trim();
+  const chars=[...txt];
+  const key=i+'|'+txt;
+  const c=$('curr');
+  if(key!==lastKey){
+    lastKey=key;
+    c.classList.toggle('pause',!txt&&!pg);
+    c.classList.toggle('pg',pg);
+    if(!txt){ c.textContent=pg?PAGE:'（停頓）'; }
+    else { c.innerHTML=''; chars.forEach(ch=>{ const sp=document.createElement('span'); sp.textContent=ch; c.appendChild(sp); }); }
+    const fill=(el,arr)=>{ el.innerHTML=''; arr.forEach(x=>{ const d=document.createElement('div'); if(isPage(x)){ d.className='pg'; d.textContent=PAGE; } else d.textContent=x.text; el.appendChild(d); }); };
+    fill($('prev'),S.segs.slice(0,i).filter(x=>x.text.trim()).slice(-2));
+    fill($('next'),S.segs.slice(i+1).filter(x=>x.text.trim()).slice(0,2));
+  }
+  if(txt){ // 逐字平滑由白轉橘：已讀的字全橘，正在讀的那個字從左到右漸變
+    const f=p*chars.length, lit=Math.floor(f), frac=f-lit, sp=c.children;
+    for(let k=0;k<sp.length;k++){
+      const cls=k<lit?'r':k===lit?'h':'';
+      if(sp[k].className!==cls) sp[k].className=cls;
+      if(cls==='h') sp[k].style.setProperty('--p',(frac*100).toFixed(1)+'%');
+    }
+  }
+  $('segbar').style.width=(p*100)+'%';
+  $('metaL').textContent=`段 ${i+1}/${n}`;
+  $('metaR').textContent=`剩 ${(s.dur-(t-st[i])).toFixed(1)}s`;
+  $('tc').innerHTML=`${fmt(t)} <small>/ ${fmt(total())}</small>`;
+  $('ph').style.left=t*S.pps+'px';
+  nodes.forEach((b,id)=>b.classList.toggle('playing',id===s.id));
+}
+
+/* ---------- 播放 ---------- */
+function tick(ts){
+  if(!playing) return;
+  const dt=(ts-last)/1000; last=ts;
+  if(countdown>0){
+    countdown-=dt; $('count').textContent=Math.ceil(countdown);
+    if(countdown<=0) $('count').hidden=true;
+  } else {
+    t+=dt*S.rate;
+    if(t>=total()){ t=total(); setPlay(false); }
+    follow();
+  }
+  stage(); if(playing) raf=requestAnimationFrame(tick);
+}
+function follow(){
+  const tl=$('tl'), x=t*S.pps;
+  if(x>tl.scrollLeft+tl.clientWidth*.8||x<tl.scrollLeft) tl.scrollLeft=x-tl.clientWidth*.25;
+}
+function setPlay(p){
+  if(p&&!S.segs.length) return;
+  playing=p; $('play').textContent=p?'❚❚ 暫停':'▶ 播放';
+  cancelAnimationFrame(raf);
+  if(p){
+    if(t>=total()-0.05) t=0;
+    if(S.cd){ countdown=3; $('count').hidden=false; $('count').textContent=3; }
+    last=performance.now(); raf=requestAnimationFrame(tick);
+  } else { countdown=0; $('count').hidden=true; stage(); }
+}
+function seek(x){ t=Math.max(0,Math.min(total(),x)); lastKey=''; stage(); }
+function jump(d){ const i=Math.max(0,Math.min(S.segs.length-1,at(t)+d)); seek(starts()[i]); follow(); }
+
+/* ---------- 段落編輯 ---------- */
+function select(id){ sel=id; layout(); const s=S.segs[idxOf(id)]; if(s) $('segText').value=s.text; }
+function selPanel(){
+  const i=idxOf(sel), has=i>=0;
+  ['segText','segDur','estB','splitB','delB','pauseB'].forEach(k=>$(k).disabled=!has);
+  $('mergeB').disabled=!has||i>=S.segs.length-1;
+  if(!has){ $('selInfo').textContent=''; return; }
+  const s=S.segs[i], st=starts()[i];
+  $('selInfo').innerHTML=`#${i+1} <small>${fmt(st)} → ${fmt(st+s.dur)}</small>`;
+  if(document.activeElement!==$('segDur')) $('segDur').value=s.dur.toFixed(1);
+}
+const cur=()=>S.segs[idxOf(sel)];
+const commit=()=>{ lastKey=''; layout(); ruler(); save(); };
+$('segText').addEventListener('input',()=>{
+  const s=cur(); if(!s) return;
+  const v=$('segText').value;
+  const mode=$('mode').value==='line'?'period':$('mode').value;
+  const parts=split(v.replace(/\n+/g,' '),mode);
+  // 句號後面還有文字 → 自動切成多段，游標移到最後一段繼續打字
+  if(parts.length>1){
+    const i=idxOf(sel); const tail=/\s$/.test(v)?' ':'';
+    const fresh=parts.map((p,k)=>k===0?Object.assign(s,{text:p,dur:est(p)}):mk(p));
+    fresh[fresh.length-1].text+=tail;
+    S.segs.splice(i,1,...fresh); build();
+    const lastSeg=fresh[fresh.length-1]; select(lastSeg.id);
+    const ta=$('segText'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+    syncSrc(); return;
+  }
+  s.text=v; commit(); syncSrc();
+});
+$('segDur').addEventListener('input',()=>{ const s=cur(), v=parseFloat($('segDur').value); if(s&&v>=.5){ s.dur=r1(v); commit(); }});
+$('estB').onclick=()=>{ const s=cur(); if(s){ s.dur=est(s.text); commit(); }};
+$('splitB').onclick=()=>{
+  const i=idxOf(sel); if(i<0) return; const s=S.segs[i], ta=$('segText');
+  const pos=ta.selectionStart, a=s.text.slice(0,pos).trim(), b=s.text.slice(pos).trim();
+  if(!a||!b){ $('segText').focus(); $('selInfo').textContent='把游標放在要切開的位置'; return; }
+  const ra=a.length/(a.length+b.length);
+  const n=mk(b,r1(Math.max(.5,s.dur*(1-ra)))); s.text=a; s.dur=r1(Math.max(.5,s.dur*ra));
+  S.segs.splice(i+1,0,n); build(); select(s.id); syncSrc();
+};
+$('mergeB').onclick=()=>{
+  const i=idxOf(sel); const a=S.segs[i], b=S.segs[i+1]; if(!a||!b) return;
+  a.text=(a.text.trim()+(a.text.trim()&&b.text.trim()?' ':'')+b.text.trim()); a.dur=r1(a.dur+b.dur);
+  S.segs.splice(i+1,1); build(); select(a.id); syncSrc();
+};
+$('pauseB').onclick=()=>{ const i=idxOf(sel); if(i<0) return; const n=mk(PAGE); S.segs.splice(i+1,0,n); build(); select(n.id); syncSrc(); };
+$('delB').onclick=()=>{
+  const i=idxOf(sel); if(i<0) return; S.segs.splice(i,1);
+  sel=S.segs[Math.min(i,S.segs.length-1)]?.id??null; build(); if(sel) select(sel); seek(t); syncSrc();
+};
+
+/* ---------- 匯入 ---------- */
+$('importB').onclick=()=>{
+  const v=$('src').value; S.src=v;
+  const parts=split(v,$('mode').value); if(!parts.length) return;
+  const keep=new Map(), pages=[];
+  S.segs.forEach(o=>{ if(isPage(o)) pages.push(o.dur); else { const k=o.text.trim(); if(!keep.has(k)) keep.set(k,[]); keep.get(k).push(o.dur); } });
+  S.segs=parts.map(p=>{ if(p===PAGE) return mk(p,pages.length?pages.shift():undefined);
+    const q=keep.get(p); return mk(p,q&&q.length?q.shift():undefined); }); t=0; sel=S.segs[0].id; build(); select(sel); seek(0); save();
+};
+// 貼上後自動依設定分段
+$('src').addEventListener('paste',()=>setTimeout(()=>$('importB').click(),0));
+$('src').addEventListener('input',()=>{ S.src=$('src').value; save(); });
+// 手動修改原文後，離開輸入框時自動套用
+$('src').addEventListener('change',()=>{ if($('src').value.trim()) $('importB').click(); });
+$('mode').addEventListener('change',()=>{ if($('src').value.trim()) $('importB').click(); });
+$('speed').addEventListener('input',()=>{ const v=parseFloat($('speed').value); if(v>0){ S.speed=v; S.segs.forEach(s=>{ if(!isPage(s)) s.dur=est(s.text); }); commit(); }});
+$('reEstB').onclick=()=>{ S.segs.forEach(s=>s.dur=est(s.text)); commit(); };
+
+/* ---------- 顯示設定 ---------- */
+const applyView=()=>{
+  $('stage').style.setProperty('--fs',S.fs);
+  document.documentElement.style.setProperty('--page',S.pageColor);
+  $('pageColor').value=S.pageColor; $('pageDurIn').value=S.pageDur;
+  $('stage').classList.toggle('mirror',S.mirror); $('mirror').classList.toggle('on',S.mirror);
+  $('stage').classList.toggle('align-left',S.left); $('alignB').classList.toggle('on',S.left);
+  $('cdB').classList.toggle('on',S.cd);
+  $('fsz').value=S.fs; $('zoom').value=S.pps; $('ripple').checked=S.ripple; $('rate').value=String(S.rate); $('speed').value=S.speed;
+};
+$('fsz').oninput=()=>{ S.fs=+$('fsz').value; applyView(); save(); };
+$('mirror').onclick=()=>{ S.mirror=!S.mirror; applyView(); save(); };
+$('alignB').onclick=()=>{ S.left=!S.left; applyView(); save(); };
+$('cdB').onclick=()=>{ S.cd=!S.cd; applyView(); save(); };
+$('pageColor').oninput=()=>{ S.pageColor=$('pageColor').value; applyView(); save(); };
+// 改換頁秒數：所有換頁一起套用；個別換頁仍可在時間軸單獨拉長縮短
+$('pageDurIn').oninput=()=>{ const v=parseFloat($('pageDurIn').value); if(v>=.5){ S.pageDur=r1(v); S.segs.forEach(s=>{ if(isPage(s)) s.dur=S.pageDur; }); commit(); } };
+$('rate').onchange=()=>{ S.rate=+$('rate').value; save(); };
+$('ripple').onchange=()=>{ S.ripple=$('ripple').checked; save(); };
+$('zoom').oninput=()=>{ S.pps=+$('zoom').value; layout(); ruler(); save(); };
+$('fs').onclick=()=>{ const s=$('stage');
+  const p=document.fullscreenElement?document.exitFullscreen():s.requestFullscreen?s.requestFullscreen():null;
+  p&&p.catch&&p.catch(()=>{}); };
+
+$('play').onclick=()=>setPlay(!playing);
+$('restart').onclick=()=>{ seek(0); $('tl').scrollLeft=0; setPlay(true); };
+$('prevB').onclick=()=>jump(-1); $('nextB').onclick=()=>jump(1);
+document.addEventListener('keydown',e=>{
+  const tag=e.target.tagName; if(tag==='TEXTAREA'||tag==='INPUT'&&e.target.type!=='range'&&e.target.type!=='checkbox'||tag==='SELECT') return;
+  if(e.key===' '){ e.preventDefault(); setPlay(!playing); }
+  else if(e.key==='ArrowRight'){ e.preventDefault(); jump(1); }
+  else if(e.key==='ArrowLeft'){ e.preventDefault(); jump(-1); }
+});
+window.addEventListener('resize',()=>{ layout(); ruler(); });
+
+/* ---------- 啟動 ---------- */
+if(!load()){ S.segs=split(sample,'period').map(p=>mk(p)); }
+
+sel=S.segs[0]?.id??null;
+$('src').value=S.src||'';
+applyView(); build(); if(sel) select(sel); seek(0);
+</script>
+
+</body>
+</html>
